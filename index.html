@@ -447,7 +447,7 @@ input,select,textarea,button{font-family:inherit;}
             <div class="ac-list" id="f-ac"></div>
           </div>
         </label>
-        <label><span id="l-qty">Qty (g)</span><input type="number" id="f-qty" placeholder="150"></label>
+        <label><span id="l-qty">Qty (g)</span><input type="number" id="f-qty" placeholder="100" oninput="recalcFood()"></label>
         <label><span id="l-kcal">Calories</span><input type="number" id="f-kcal" placeholder="0"></label>
         <label><span id="l-prot">Protein</span><input type="number" id="f-prot" step="0.1" placeholder="0"></label>
         <label><span id="l-fat">Fat</span><input type="number" id="f-fat" step="0.1" placeholder="0"></label>
@@ -737,7 +737,8 @@ var TR={
     calc:"🔥 Calorie calculator",cAge:"Age",cWeight:"Weight (kg)",cHeight:"Height (cm)",
     cAct:"Activity",cGoal:"Goal",calcFill:"Enter your data above to calculate.",
     calcMaint:"Maintenance",calcTarget:"Your target",calcProt:"Protein",calcFat:"Fat",calcCarb:"Carbs",
-    calcBmr:"BMR (at rest)",calcApply:"✓ Use as my daily goals"
+    calcBmr:"BMR (at rest)",calcApply:"✓ Use as my daily goals",
+    noFoodFound:"No matches found — try a simpler name",offline:"No internet — check connection"
   },
   es:{
     tagline:"Tu compañero inteligente de fitness y nutrición",
@@ -793,7 +794,8 @@ var TR={
     calc:"🔥 Calculadora de calorías",cAge:"Edad",cWeight:"Peso (kg)",cHeight:"Estatura (cm)",
     cAct:"Actividad",cGoal:"Objetivo",calcFill:"Ingresa tus datos para calcular.",
     calcMaint:"Mantenimiento",calcTarget:"Tu meta",calcProt:"Proteínas",calcFat:"Grasas",calcCarb:"Carbohidratos",
-    calcBmr:"TMB (en reposo)",calcApply:"✓ Usar como mis metas diarias"
+    calcBmr:"TMB (en reposo)",calcApply:"✓ Usar como mis metas diarias",
+    noFoodFound:"Sin resultados — prueba un nombre más simple",offline:"Sin internet — revisa la conexión"
   }
 };
 var LANG=localStorage.getItem('cf_lang')||'en';
@@ -985,7 +987,9 @@ var FOODS=[
   ['Whey protein',400,80,7,10],['Protein bar',350,20,12,40],['Honey',304,0.3,0,82],['Dark chocolate',546,5,31,61]
 ];
 var acTimer=null;
+var _foodBase=null; // per-100g values of the selected food
 function foodSearch(q){
+  _foodBase=null; // user is typing a new search → drop previous base
   clearTimeout(acTimer);var box=document.getElementById('f-ac');
   if(q.length<2){box.style.display='none';return;}
   var local=FOODS.filter(function(f){return f[0].toLowerCase().indexOf(q.toLowerCase())>=0;}).slice(0,6)
@@ -995,17 +999,36 @@ function foodSearch(q){
   acTimer=setTimeout(function(){fetchFood(q);},500);
 }
 function fetchFood(q){
-  fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+'&json=1&page_size=10&fields=product_name,nutriments,brands')
-  .then(function(r){return r.json();}).then(function(data){
-    if(!data.products)return;
-    var res=data.products.filter(function(p){return p.product_name&&p.product_name.trim();}).slice(0,8)
-      .map(function(p){var n=p.nutriments||{};return{
-        name:p.product_name+(p.brands?' ('+p.brands.split(',')[0]+')':''),
-        kcal:Math.round(n['energy-kcal_100g']||n['energy-kcal']||0),
-        prot:+(n.proteins_100g||0).toFixed(1),fat:+(n.fat_100g||0).toFixed(1),carb:+(n.carbohydrates_100g||0).toFixed(1)
-      };});
+  // Pull live results from Open Food Facts (3M+ products worldwide, no API key).
+  // Sort by popularity, keep only items that actually carry energy data.
+  var url='https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+
+    '&search_simple=1&action=process&json=1&page_size=40&sort_by=unique_scans_n'+
+    '&fields=product_name,product_name_en,generic_name,nutriments,brands';
+  fetch(url).then(function(r){return r.json();}).then(function(data){
+    var prods=(data&&data.products)||[];
+    var seen={},res=[];
+    prods.forEach(function(p){
+      var n=p.nutriments||{};
+      var kcal=n['energy-kcal_100g'];
+      if(kcal==null&&n['energy_100g']!=null)kcal=n['energy_100g']/4.184; // kJ→kcal fallback
+      if(kcal==null||kcal<=0)return; // skip items with no usable energy value
+      var name=(p.product_name||p.product_name_en||p.generic_name||'').trim();
+      if(!name)return;
+      var full=name+(p.brands?' ('+p.brands.split(',')[0].trim()+')':'');
+      var key=full.toLowerCase();
+      if(seen[key])return; seen[key]=1;
+      res.push({
+        name:full,
+        kcal:Math.round(kcal),
+        prot:+(n.proteins_100g||0).toFixed(1),
+        fat:+(n.fat_100g||0).toFixed(1),
+        carb:+(n.carbohydrates_100g||0).toFixed(1)
+      });
+    });
+    res=res.slice(0,10);
     if(res.length)showFoodAC(res);
-  }).catch(function(){});
+    else{var box=document.getElementById('f-ac');box.innerHTML='<div class="ac-loading">'+t('noFoodFound')+'</div>';box.style.display='block';}
+  }).catch(function(){var box=document.getElementById('f-ac');box.innerHTML='<div class="ac-loading">⚠️ '+t('offline')+'</div>';box.style.display='block';});
 }
 function showFoodAC(items){
   var box=document.getElementById('f-ac');box._data=items;
@@ -1015,11 +1038,24 @@ function showFoodAC(items){
 function pickFood(i){
   var it=document.getElementById('f-ac')._data[i];
   document.getElementById('f-name').value=it.name;
-  document.getElementById('f-kcal').value=it.kcal;
-  document.getElementById('f-prot').value=it.prot;
-  document.getElementById('f-fat').value=it.fat;
-  document.getElementById('f-carb').value=it.carb;
+  // remember per-100g values so qty can scale them
+  _foodBase={kcal:it.kcal,prot:it.prot,fat:it.fat,carb:it.carb};
+  // default to 100 g if no quantity entered yet
+  var qtyEl=document.getElementById('f-qty');
+  if(!(+qtyEl.value>0))qtyEl.value=100;
   document.getElementById('f-ac').style.display='none';
+  recalcFood();
+}
+// scale kcal/macros from the per-100g base by the entered quantity
+function recalcFood(){
+  if(!_foodBase)return;
+  var qty=+val('f-qty');
+  if(!(qty>0))qty=100;
+  var k=qty/100;
+  document.getElementById('f-kcal').value=Math.round(_foodBase.kcal*k);
+  document.getElementById('f-prot').value=+(_foodBase.prot*k).toFixed(1);
+  document.getElementById('f-fat').value=+(_foodBase.fat*k).toFixed(1);
+  document.getElementById('f-carb').value=+(_foodBase.carb*k).toFixed(1);
 }
 document.addEventListener('click',function(e){if(!e.target.closest('.ac'))document.querySelectorAll('.ac-list').forEach(function(b){b.style.display='none';});});
 
@@ -1052,6 +1088,7 @@ function addFood(){
   d.food.push({id:Date.now(),date:dayStr(FOOD_DAY),meal:val('f-meal'),name:name,
     qty:+val('f-qty')||0,kcal:+val('f-kcal')||0,prot:+val('f-prot')||0,fat:+val('f-fat')||0,carb:+val('f-carb')||0,note:val('f-note')});
   saveD(d);
+  _foodBase=null;
   ['f-name','f-qty','f-kcal','f-prot','f-fat','f-carb','f-note'].forEach(function(i){document.getElementById(i).value='';});
   renderFood();
 }
