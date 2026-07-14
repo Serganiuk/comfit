@@ -1,0 +1,17 @@
+:root{
+  --bg:#0B0B0F; --bg2:#101016; --surface:rgba(255,255,255,0.045);
+  --surface2:rgba(255,255,255,0.07); --line:rgba(255,255,255,0.09);
+  --txt:#F5F5F7; --muted:rgba(255,255,255,0.55); --dim:rgba(255,255,255,0.3);
+  --amber:#FFC531; --amber-d:#E8A800; --amber-dim:rgba(255,197,49,0.14);
+  --coral:#FF4D6D; --coral-d:#E03155; --coral-dim:rgba(255,77,109,0.14);
+  --green:#32D74B; --blue:#0A84FF; --orange:#FF9F0A; --purple:#BF5AF2; --teal:#64D2FF;
+  --r:18px; --r-lg:24px; --r-sm:12px;
+  --shadow:0 16px 40px rgba(0,0,0,0.45);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{font-family:var(--font);background:var(--bg);color:var(--txt);min-height:100vh;overflow-x:hidden;line-height:1.5;
+  -webkit-font-smoothing:antialiased;}
+::selection{background:var(--amber);color:#000;}
+input,select,textarea,button{font-family:inherit;}
